@@ -45,7 +45,13 @@ def ask_mini(prompt: str) -> str:
 
     response = client.responses.create(
         model=AZURE_OPENAI_MINI_DEPLOYMENT,
-        input=prompt
+        input=prompt,
+
+        # نفس القيمة بالظبط اللي في azure_gpt41_nano.py
+        # عشان المقارنة بين الموديلين تكون عادلة (Fair Comparison) —
+        # أي فرق في النتائج بعد كده يبقى مصدره قدرة الـ Model
+        # نفسه، مش اختلاف في الإعدادات
+        temperature=0.1
     )
 
     return response.output_text

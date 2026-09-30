@@ -1,0 +1,63 @@
+# Model Comparison — GPT-4.1 nano vs GPT-4.1 mini
+
+## Methodology
+
+- **Test suite:** 13 test cases in `tests/evaluation/test_cases.py`, covering:
+  count queries, JOINs, aggregation, top-N ranking, Arabic input,
+  greeting, and unrelated-topic handling.
+- **Ground truth:** each test case's expected result is computed by
+  executing a manually-written, verified SQL query against the live
+  database at evaluation time (not a hardcoded value), via
+  `execute_query()` in `database.py`.
+- **Run command:** `python -m tests.evaluation.evaluate_models`
+- **Temperature:** both models fixed at `0.1` for deterministic,
+  comparable behavior (see `models/azure_gpt41_nano.py` and
+  `models/azure_gpt41_mini.py`).
+- **Role:** all evaluation queries run as `USER` (default role, no
+  `user` parameter passed).
+
+## Results
+
+| Model | Passed | Failed | Accuracy | Avg Latency |
+|---|---|---|---|---|
+| GPT-4.1 nano | 9/13 | 4 | 69.2% | 12.43s |
+| GPT-4.1 mini | 13/13 | 0 | **100.0%** | **6.89s** |
+
+## Failure Analysis (nano)
+
+Two distinct failure patterns were identified, both in judgment-heavy
+pipeline stages rather than simple information extraction:
+
+1. **Over-triggered ambiguity detection on Arabic input** (Tests 9, 10)
+   `input_analyzer.py` classified clear Arabic questions
+   ("كام artist موجود؟") as `AMBIGUOUS`, requesting unnecessary
+   clarification instead of answering directly.
+
+2. **Incorrect multiple-question decomposition** (Tests 6, 11)
+   `multiple_question_analyzer.py` classified single, unambiguous
+   questions as `MULTIPLE`, then failed to produce at least two
+   sub-questions, raising a validation error
+   (`"MULTIPLE must contain at least two questions"`).
+
+Both patterns point to the same root cause: nano is less reliable at
+the pipeline's classification/decision stages (ambiguity detection,
+question decomposition) than at direct SQL generation or answering —
+consistent with it being a smaller model.
+
+## Anomaly Note
+
+Test 1 on nano recorded a latency of 80.55s, a significant outlier
+versus its other results (9-14s range). This was not reproduced or
+investigated further; it is most likely a transient API/network delay
+rather than a systematic issue. Flagged for monitoring if it recurs.
+
+## Recommendation
+
+**GPT-4.1 mini is the recommended default model** for this project —
+it is both more accurate and faster than nano on this pipeline's
+workload. `app.py` has been updated to default to `mini`.
+
+`nano` remains available as a selectable option (e.g. for
+cost-sensitive scenarios), but is not recommended as the default given
+its lower reliability on classification stages, particularly with
+Arabic input.

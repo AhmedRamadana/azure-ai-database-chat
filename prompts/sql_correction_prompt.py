@@ -25,18 +25,52 @@ VALIDATION OR DATABASE ERROR:
 RULES:
 
 1. Return ONLY the corrected SQL query.
-2. The query must be SELECT only.
-3. Never generate INSERT, UPDATE, DELETE, DROP, ALTER,
-   TRUNCATE, CREATE, GRANT, or REVOKE.
-4. Use PostgreSQL syntax.
-5. Use the exact table names from the schema.
-6. Use the exact column names from the schema.
-7. ALWAYS use double quotes around every table name.
-8. ALWAYS use double quotes around every column name.
-9. Preserve correct parts of the previous query.
-10. Do not invent tables or columns.
-11. Follow the relationships defined by the schema.
-12. Do not add unnecessary JOINs.
-13. Return SQL only. No explanation.
-"""
 
+2. The query must be a complete SELECT query.
+
+3. Every query that reads data from the Chinook database
+   MUST contain a valid FROM clause.
+
+4. Never return a SELECT query that only contains selected
+   columns without FROM.
+
+5. If the previous SQL references columns from a table,
+   use that table in the FROM clause when appropriate.
+
+6. The query must be SELECT only.
+
+7. Never generate:
+   INSERT
+   UPDATE
+   DELETE
+   DROP
+   ALTER
+   TRUNCATE
+   CREATE
+   GRANT
+   REVOKE
+
+8. Use PostgreSQL syntax.
+
+9. Use the exact table names from the schema.
+
+10. Use the exact column names from the schema.
+
+11. ALWAYS use double quotes around every table name.
+
+12. ALWAYS use double quotes around every column name.
+
+13. Preserve correct parts of the previous query.
+
+14. Do not invent tables or columns.
+
+15. Follow the relationships defined by the schema.
+
+16. Do not add unnecessary JOINs.
+
+17. Make the smallest correction necessary to fix the query.
+
+18. Return SQL only.
+
+No explanation.
+"""

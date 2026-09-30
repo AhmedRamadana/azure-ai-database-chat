@@ -45,7 +45,13 @@ def ask_nano(prompt: str) -> str:
 
     response = client.responses.create(
         model=AZURE_OPENAI_DEPLOYMENT,
-        input=prompt
+        input=prompt,
+
+        # temperature منخفضة = إجابات أكثر ثباتًا (Deterministic)
+        # مناسب لمهام دقيقة زي: Classification, SQL generation,
+        # Answer generation من بيانات محددة
+        # مش 0.0 بالظبط عشان نسيب هامش بسيط لصياغة طبيعية للجملة
+        temperature=0.1
     )
 
     return response.output_text

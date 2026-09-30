@@ -1,7 +1,24 @@
+import os
+
 import streamlit as st
 import pandas as pd
+from dotenv import load_dotenv
 
 from pipeline import run_pipeline
+from auth.mock_auth import get_mock_user
+
+load_dotenv()
+
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
+
+# =========================================================
+# Configuration
+# =========================================================
+
+# أقصى عدد صف نعرضه فعليًا في الجدول بالواجهة (مستقل عن
+# SAFETY_LIMIT بتاع sql_executor.py، وأصغر منه)
+DISPLAY_CAP = 200
 
 
 # =========================================================
@@ -30,11 +47,140 @@ model_display_name = {
 # =========================================================
 
 if "selected_model" not in st.session_state:
-    st.session_state.selected_model = "nano"
+
+    st.session_state.selected_model = "mini"
+
+
+if "selected_role" not in st.session_state:
+
+    st.session_state.selected_role = "USER"
+
+
+if "admin_authenticated" not in st.session_state:
+
+    st.session_state.admin_authenticated = False
 
 
 if "messages" not in st.session_state:
+
     st.session_state.messages = []
+
+
+# =========================================================
+# Helper: عرض نتيجة سؤال واحد (Database Result)
+# =========================================================
+#
+# دالة مشتركة تستخدم في مكانين: عرض الـ History القديم، وعرض
+# الإجابة اللايف وقت السؤال — عشان مانكررش نفس الـ Logic مرتين.
+# =========================================================
+
+def render_database_result(
+    columns,
+    rows,
+    real_total,
+    sql,
+    download_key
+):
+
+    if not rows:
+
+        st.info(
+            "No matching data was found."
+        )
+
+    else:
+
+        # ---------------------------------------------
+        # نعرض أول DISPLAY_CAP صف بس في الجدول
+        # ---------------------------------------------
+
+        display_rows = rows[:DISPLAY_CAP]
+
+        display_dataframe = pd.DataFrame(
+            display_rows,
+            columns=columns
+        )
+
+
+        # ---------------------------------------------
+        # رسالة العدد — بتفرّق بين 3 حالات:
+        # 1) العدد الحقيقي أكبر من الصفوف اللي جبناها أصلاً
+        #    (يعني SAFETY_LIMIT بتاع sql_executor اتفعّل)
+        # 2) الصفوف اللي جبناها أكبر من DISPLAY_CAP
+        #    (يعني عرضنا بس جزء منها في الجدول)
+        # 3) كل حاجة معروضة بالكامل
+        # ---------------------------------------------
+
+        if real_total > len(rows):
+
+            st.caption(
+                f"⚠️ Showing {len(display_rows)} of "
+                f"{real_total} total matching results "
+                f"(fetched up to {len(rows)} for safety)."
+            )
+
+        elif len(rows) > DISPLAY_CAP:
+
+            st.caption(
+                f"Showing first {DISPLAY_CAP} of "
+                f"{len(rows)} result(s)."
+            )
+
+        else:
+
+            st.caption(
+                f"{len(rows)} result(s) found."
+            )
+
+
+        # ---------------------------------------------
+        # الجدول (مقصوص لـ DISPLAY_CAP)
+        # ---------------------------------------------
+
+        st.dataframe(
+            display_dataframe,
+            use_container_width=True,
+            hide_index=True
+        )
+
+
+        # ---------------------------------------------
+        # Download CSV — بيحمّل كل الـ rows اللي جبناها
+        # فعليًا (لحد SAFETY_LIMIT)، مش بس الـ 200 المعروضة
+        # ---------------------------------------------
+
+        full_dataframe = pd.DataFrame(
+            rows,
+            columns=columns
+        )
+
+        csv_data = full_dataframe.to_csv(
+            index=False
+        ).encode("utf-8-sig")
+
+        st.download_button(
+            label=(
+                f"Download CSV ({len(rows)} rows)"
+            ),
+            data=csv_data,
+            file_name="query_result.csv",
+            mime="text/csv",
+            key=download_key
+        )
+
+
+    # -----------------------------------------------------
+    # Generated SQL
+    # -----------------------------------------------------
+
+    with st.expander(
+        "View Generated SQL"
+    ):
+
+        st.code(
+            sql or "",
+            language="sql"
+        )
 
 
 # =========================================================
@@ -49,6 +195,7 @@ with st.sidebar:
 
     st.subheader("Model Settings")
 
+
     # -----------------------------------------------------
     # Model Selector
     # -----------------------------------------------------
@@ -62,8 +209,10 @@ with st.sidebar:
         ].index(
             st.session_state.selected_model
         ),
-        format_func=lambda model: model_display_name[model]
+        format_func=lambda model:
+            model_display_name[model]
     )
+
 
     # -----------------------------------------------------
     # Update Selected Model Immediately
@@ -72,6 +221,7 @@ with st.sidebar:
     st.session_state.selected_model = selected_model
 
     st.divider()
+
 
     # -----------------------------------------------------
     # Current Model
@@ -83,6 +233,100 @@ with st.sidebar:
         f"**{model_display_name[st.session_state.selected_model]}**"
     )
 
+    st.divider()
+
+
+    # =======================================================
+    # User Settings (Role Selector + Admin Password Gate)
+    # =======================================================
+
+    st.subheader("User Settings")
+
+
+    # -----------------------------------------------------
+    # Role Choice (مجرد اختيار، مش الـ Role الفعلي بعد)
+    # -----------------------------------------------------
+
+    role_choice = st.selectbox(
+        "Select Role",
+        options=["USER", "ADMIN"]
+    )
+
+
+    # -----------------------------------------------------
+    # لو اختار USER: نرجّع كل حاجة لوضعها الطبيعي
+    # -----------------------------------------------------
+
+    if role_choice == "USER":
+
+        st.session_state.admin_authenticated = False
+
+        st.session_state.selected_role = "USER"
+
+
+    # -----------------------------------------------------
+    # لو اختار ADMIN: نطلب Password قبل ما نفعّله
+    # -----------------------------------------------------
+
+    else:
+
+        if not st.session_state.admin_authenticated:
+
+            admin_password_input = st.text_input(
+                "Admin Password",
+                type="password",
+                key="admin_password_input"
+            )
+
+            if admin_password_input:
+
+                if not ADMIN_PASSWORD:
+
+                    st.error(
+                        "ADMIN_PASSWORD is not configured "
+                        "on the server (.env)."
+                    )
+
+                elif admin_password_input == ADMIN_PASSWORD:
+
+                    st.session_state.admin_authenticated = True
+
+                    st.success("Admin access granted.")
+
+                else:
+
+                    st.error("Incorrect password.")
+
+        if st.session_state.admin_authenticated:
+
+            st.session_state.selected_role = "ADMIN"
+
+        else:
+
+            # لسه معتمدش — يفضل USER فعليًا
+            st.session_state.selected_role = "USER"
+
+            st.caption(
+                "🔒 Enter the correct admin password "
+                "to unlock ADMIN access."
+            )
+
+
+    st.divider()
+
+    st.caption("Current role")
+
+    st.markdown(
+        f"**{st.session_state.selected_role}**"
+    )
+
+    st.caption(
+        "⚠️ Demo purposes only — in production, "
+        "role comes from real authentication, not a password field."
+    )
+
+    st.divider()
+
 
 # =========================================================
 # Main Header
@@ -93,7 +337,6 @@ st.title("🎵 Chinook AI Assistant")
 st.write(
     "Ask questions about the Chinook database."
 )
-
 
 st.divider()
 
@@ -121,6 +364,7 @@ for message in st.session_state.messages:
 
         if message["role"] == "assistant":
 
+
             # =============================================
             # Model Used
             # =============================================
@@ -134,96 +378,55 @@ for message in st.session_state.messages:
 
 
             # =============================================
-            # Database Result
+            # Database Result (single question)
             # =============================================
 
             if message.get("type") == "database":
 
-                columns = message.get(
-                    "columns",
-                    []
+                render_database_result(
+                    columns=message.get("columns", []),
+                    rows=message.get("rows", []),
+                    real_total=message.get(
+                        "real_total",
+                        len(message.get("rows", []))
+                    ),
+                    sql=message.get("sql", ""),
+                    download_key=message.get("message_id")
                 )
 
-                rows = message.get(
-                    "rows",
+
+            # =============================================
+            # Multiple Questions Result
+            # =============================================
+
+            if message.get("type") == "multiple":
+
+                for sub_result in message.get(
+                    "results",
                     []
-                )
-
-
-                # =========================================
-                # Convert to DataFrame
-                # =========================================
-
-                if rows:
-
-                    dataframe = pd.DataFrame(
-                        rows,
-                        columns=columns
-                    )
-
-
-                    # =====================================
-                    # Result Count
-                    # =====================================
-
-                    st.caption(
-                        f"{len(dataframe)} result(s) found."
-                    )
-
-
-                    # =====================================
-                    # Display Table
-                    # =====================================
-
-                    st.dataframe(
-                        dataframe,
-                        use_container_width=True,
-                        hide_index=True
-                    )
-
-
-                    # =====================================
-                    # Download CSV
-                    # =====================================
-
-                    csv_data = dataframe.to_csv(
-                        index=False
-                    ).encode("utf-8-sig")
-
-
-                    st.download_button(
-                        label="Download CSV",
-                        data=csv_data,
-                        file_name="query_result.csv",
-                        mime="text/csv",
-                        key=message.get(
-                            "message_id"
-                        )
-                    )
-
-
-                else:
-
-                    st.info(
-                        "No matching data was found."
-                    )
-
-
-                # =====================================
-                # Generated SQL
-                # =====================================
-
-                with st.expander(
-                    "View Generated SQL"
                 ):
 
-                    st.code(
-                        message.get(
-                            "sql",
-                            ""
-                        ),
-                        language="sql"
-                    )
+                    with st.expander(
+                        f"🔍 {sub_result['question']}"
+                    ):
+
+                        st.caption(
+                            f"Status: {sub_result['status']}"
+                        )
+
+                        if sub_result.get("sql"):
+
+                            st.code(
+                                sub_result["sql"],
+                                language="sql"
+                            )
+
+                        else:
+
+                            st.info(
+                                "No SQL was generated "
+                                "for this sub-question."
+                            )
 
 
 # =========================================================
@@ -245,7 +448,28 @@ if prompt:
     # Get Current Selected Model
     # -----------------------------------------------------
 
-    model_name = st.session_state.selected_model
+    model_name = (
+        st.session_state.selected_model
+    )
+
+
+    # -----------------------------------------------------
+    # Build Current User (Role)
+    # -----------------------------------------------------
+
+    current_user = get_mock_user(
+        user_id="streamlit_user",
+        role=st.session_state.selected_role
+    )
+
+
+    # -----------------------------------------------------
+    # Save Previous Conversation History
+    # -----------------------------------------------------
+
+    conversation_history = (
+        st.session_state.messages.copy()
+    )
 
 
     # -----------------------------------------------------
@@ -254,7 +478,9 @@ if prompt:
 
     with st.chat_message("user"):
 
-        st.markdown(prompt)
+        st.markdown(
+            prompt
+        )
 
 
     # -----------------------------------------------------
@@ -283,7 +509,9 @@ if prompt:
 
                 result = run_pipeline(
                     user_question=prompt,
-                    model_name=model_name
+                    model_name=model_name,
+                    conversation_history=conversation_history,
+                    user=current_user
                 )
 
 
@@ -307,80 +535,58 @@ if prompt:
 
 
                 # =========================================
-                # Database Result
+                # Database Result (single question)
                 # =========================================
 
                 if result["type"] == "database":
 
-                    columns = result["columns"]
-
-                    rows = result["rows"]
-
-
-                    # =====================================
-                    # Display DataFrame
-                    # =====================================
-
-                    if rows:
-
-                        dataframe = pd.DataFrame(
-                            rows,
-                            columns=columns
+                    render_database_result(
+                        columns=result.get("columns", []),
+                        rows=result.get("rows", []),
+                        real_total=result.get(
+                            "real_total",
+                            len(result.get("rows", []))
+                        ),
+                        sql=result.get("sql", ""),
+                        download_key=(
+                            f"download_"
+                            f"{len(st.session_state.messages)}"
                         )
+                    )
 
 
-                        st.caption(
-                            f"{len(dataframe)} result(s) found."
-                        )
+                # =========================================
+                # Multiple Questions Result
+                # =========================================
 
+                if result["type"] == "multiple":
 
-                        st.dataframe(
-                            dataframe,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-
-                        # =================================
-                        # Download CSV
-                        # =================================
-
-                        csv_data = dataframe.to_csv(
-                            index=False
-                        ).encode("utf-8-sig")
-
-
-                        st.download_button(
-                            label="Download CSV",
-                            data=csv_data,
-                            file_name="query_result.csv",
-                            mime="text/csv",
-                            key=(
-                                f"download_"
-                                f"{len(st.session_state.messages)}"
-                            )
-                        )
-
-
-                    else:
-
-                        st.info(
-                            "No matching data was found."
-                        )
-
-
-                    # =====================================
-                    # Generated SQL
-                    # =====================================
-
-                    with st.expander(
-                        "View Generated SQL"
+                    for sub_result in result.get(
+                        "results",
+                        []
                     ):
 
-                        st.code(
-                            result["sql"],
-                            language="sql"
-                        )
+                        with st.expander(
+                            f"🔍 {sub_result['question']}"
+                        ):
+
+                            st.caption(
+                                f"Status: {sub_result['status']}"
+                            )
+
+                            if sub_result.get("sql"):
+
+                                st.code(
+                                    sub_result["sql"],
+                                    language="sql"
+                                )
+
+                            else:
+
+                                st.info(
+                                    "No SQL was generated "
+                                    "for this sub-question."
+                                )
 
 
                 # =========================================
@@ -393,10 +599,8 @@ if prompt:
 
                         "content": result["answer"],
 
-                        # Model used for this answer
                         "model_name": model_name,
 
-                        # Database information
                         "type": result["type"],
 
                         "columns": result.get(
@@ -414,7 +618,21 @@ if prompt:
                             ""
                         ),
 
-                        # Unique message ID
+                        "real_total": result.get(
+                            "real_total",
+                            len(result.get("rows", []))
+                        ),
+
+                        "results": result.get(
+                            "results",
+                            []
+                        ),
+
+                        "resolved_question": result.get(
+                            "resolved_question",
+                            prompt
+                        ),
+
                         "message_id": len(
                             st.session_state.messages
                         )

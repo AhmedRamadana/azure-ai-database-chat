@@ -21,14 +21,13 @@ from sql_validator import (
 )
 
 
+MAX_SQL_CORRECTION_RETRIES = 2
+
+
 def generate_sql(
     user_question: str,
     model_name: str = "nano"
 ):
-
-    # -----------------------------------------
-    # 1. Get database schema
-    # -----------------------------------------
 
     schema = get_database_schema()
 
@@ -36,26 +35,14 @@ def generate_sql(
         schema
     )
 
-    # -----------------------------------------
-    # 2. Build SQL generation prompt
-    # -----------------------------------------
-
     prompt = build_sql_prompt(
         user_question,
         schema_context
     )
 
-    # -----------------------------------------
-    # 3. Select model
-    # -----------------------------------------
-
     model = get_model(
         model_name
     )
-
-    # -----------------------------------------
-    # 4. Generate SQL
-    # -----------------------------------------
 
     response = model(
         prompt
@@ -63,23 +50,43 @@ def generate_sql(
 
     response = response.strip()
 
-    # -----------------------------------------
-    # 5. Clean generated SQL
-    # -----------------------------------------
-
     sql_query = clean_sql(
         response
     )
 
-    # -----------------------------------------
-    # 6. Validate generated SQL
-    # -----------------------------------------
+    # --------------------------------------------------
+    # Validate generated SQL
+    # --------------------------------------------------
 
-    validate_sql(
-        sql_query
-    )
+    for attempt in range(
+        MAX_SQL_CORRECTION_RETRIES + 1
+    ):
 
-    return sql_query
+        try:
+
+            validate_sql(
+                sql_query
+            )
+
+            return sql_query
+
+        except Exception as error:
+
+            if attempt >= MAX_SQL_CORRECTION_RETRIES:
+
+                raise RuntimeError(
+                    "SQL generation failed after "
+                    f"{MAX_SQL_CORRECTION_RETRIES} "
+                    "correction retries. "
+                    f"Last error: {error}"
+                )
+
+            sql_query = correct_sql(
+                user_question=user_question,
+                previous_sql=sql_query,
+                error_message=str(error),
+                model_name=model_name
+            )
 
 
 def correct_sql(
@@ -89,19 +96,11 @@ def correct_sql(
     model_name: str = "nano"
 ):
 
-    # -----------------------------------------
-    # 1. Get database schema
-    # -----------------------------------------
-
     schema = get_database_schema()
 
     schema_context = format_schema_for_llm(
         schema
     )
-
-    # -----------------------------------------
-    # 2. Build correction prompt
-    # -----------------------------------------
 
     prompt = build_sql_correction_prompt(
         user_question=user_question,
@@ -110,17 +109,9 @@ def correct_sql(
         schema_context=schema_context
     )
 
-    # -----------------------------------------
-    # 3. Select model
-    # -----------------------------------------
-
     model = get_model(
         model_name
     )
-
-    # -----------------------------------------
-    # 4. Generate corrected SQL
-    # -----------------------------------------
 
     response = model(
         prompt
@@ -128,20 +119,8 @@ def correct_sql(
 
     response = response.strip()
 
-    # -----------------------------------------
-    # 5. Clean corrected SQL
-    # -----------------------------------------
-
     corrected_sql = clean_sql(
         response
-    )
-
-    # -----------------------------------------
-    # 6. Validate corrected SQL
-    # -----------------------------------------
-
-    validate_sql(
-        corrected_sql
     )
 
     return corrected_sql
