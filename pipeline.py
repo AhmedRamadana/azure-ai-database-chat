@@ -197,18 +197,21 @@ def run_database_query(
                 resolved_sql
             )
 
-            # execute_sql بقت ترجّع 3 قيم بدل 2:
-            # columns, rows, real_total
-            columns, rows, real_total = execute_sql(
-                query=resolved_sql,
-                user=user
+            # execute_sql بقت ترجّع 4 قيم: columns, rows,
+            # real_total, restricted_fields
+            columns, rows, real_total, restricted_fields = (
+                execute_sql(
+                    query=resolved_sql,
+                    user=user
+                )
             )
 
             return (
                 resolved_sql,
                 columns,
                 rows,
-                real_total
+                real_total,
+                restricted_fields
             )
 
         except PermissionError:
@@ -265,7 +268,8 @@ def run_multiple_database_queries(
                     "sql": None,
                     "columns": [],
                     "rows": [],
-                    "real_total": 0
+                    "real_total": 0,
+                    "restricted_fields": []
                 }
             )
 
@@ -273,12 +277,16 @@ def run_multiple_database_queries(
 
         try:
 
-            sql_query, columns, rows, real_total = (
-                run_database_query(
-                    user_question=question,
-                    model_name=model_name,
-                    user=user
-                )
+            (
+                sql_query,
+                columns,
+                rows,
+                real_total,
+                restricted_fields
+            ) = run_database_query(
+                user_question=question,
+                model_name=model_name,
+                user=user
             )
 
             question_results.append(
@@ -289,7 +297,8 @@ def run_multiple_database_queries(
                     "sql": sql_query,
                     "columns": list(columns),
                     "rows": rows,
-                    "real_total": real_total
+                    "real_total": real_total,
+                    "restricted_fields": restricted_fields
                 }
             )
 
@@ -303,7 +312,8 @@ def run_multiple_database_queries(
                     "sql": None,
                     "columns": [],
                     "rows": [],
-                    "real_total": 0
+                    "real_total": 0,
+                    "restricted_fields": []
                 }
             )
 
@@ -458,14 +468,25 @@ def run_pipeline(
             "resolved_question": resolved_question
         }
 
+    # --------------------------------------------------------
+    # ملحوظة: مفيش except PermissionError هنا تاني —
+    # run_database_query لسه ممكن ترفع PermissionError، لكن
+    # بس في حالة الرفض الكامل (لو العمود الممنوع في WHERE
+    # مثلاً). الرفض الجزئي بقى بيترجع كنتيجة عادية (مش Exception)
+    # --------------------------------------------------------
+
     try:
 
-        sql_query, columns, rows, real_total = (
-            run_database_query(
-                user_question=resolved_question,
-                model_name=model_name,
-                user=user
-            )
+        (
+            sql_query,
+            columns,
+            rows,
+            real_total,
+            restricted_fields
+        ) = run_database_query(
+            user_question=resolved_question,
+            model_name=model_name,
+            user=user
         )
 
     except PermissionError:
@@ -488,6 +509,7 @@ def run_pipeline(
         columns=columns,
         rows=rows,
         real_total=real_total,
+        restricted_fields=restricted_fields,
         model_name=model_name
     )
 
@@ -498,5 +520,6 @@ def run_pipeline(
         "columns": list(columns),
         "rows": rows,
         "real_total": real_total,
+        "restricted_fields": restricted_fields,
         "resolved_question": resolved_question
     }

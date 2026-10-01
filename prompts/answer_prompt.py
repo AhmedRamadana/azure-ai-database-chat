@@ -4,13 +4,9 @@ def build_answer_prompt(
     columns,
     rows,
     real_total: int,
+    restricted_fields: list,
     language: str
 ):
-
-    # ------------------------------------------------------
-    # لو العدد الحقيقي أكبر من عدد الصفوف اللي وصلت فعليًا
-    # في "rows"، يبقى ده عيّنة بس مش النتيجة الكاملة
-    # ------------------------------------------------------
 
     is_sample = real_total > len(rows)
 
@@ -21,10 +17,8 @@ NOTE: The RESULT ROWS below are only a SAMPLE of
 {len(rows)} rows out of {real_total} total matching rows.
 Do NOT claim there are only {len(rows)} results — the
 correct total is {real_total}. Mention the total count
-naturally, and make clear that a sample is shown (e.g.
-mention that the full list is available in the table/
-download below), without inventing details about rows
-you cannot see.
+naturally, and make clear that a sample is shown, without
+inventing details about rows you cannot see.
 """
 
     else:
@@ -34,6 +28,24 @@ NOTE: The RESULT ROWS below represent the COMPLETE set
 of matching results ({real_total} total). This is not a
 sample.
 """
+
+    if restricted_fields:
+
+        restricted_text = ", ".join(restricted_fields)
+
+        restriction_note = f"""
+NOTE: The user asked for additional information that you
+are NOT authorized to show for this request: {restricted_text}.
+These fields have been removed from the SQL result — do not
+attempt to guess or infer their values. Answer using the
+allowed data shown below, and clearly (but briefly) mention
+that the restricted field(s) could not be shown due to
+insufficient permissions.
+"""
+
+    else:
+
+        restriction_note = ""
 
     return f"""
 You are a database assistant for the Chinook database.
@@ -54,6 +66,8 @@ TOTAL MATCHING ROWS:
 {real_total}
 
 {sample_note}
+
+{restriction_note}
 
 RESULT COLUMNS:
 {columns}
@@ -104,21 +118,6 @@ GOOD:
 BAD:
 There are 59 customers.
 
-BAD:
-There are 59 customer في قاعدة البيانات.
-
-
-DETECTED LANGUAGE: arabic
-
-USER:
-كام عميل موجود؟
-
-GOOD:
-يوجد 59 عميل في قاعدة البيانات.
-
-BAD:
-There are 59 customers.
-
 
 DETECTED LANGUAGE: english
 
@@ -154,6 +153,24 @@ BAD:
 لقيت 15 track مطابقة للشرط.
 
 
+EXAMPLE WITH A RESTRICTED FIELD (partial authorization):
+
+USER QUESTION: اعرضلي اسم العميل رقم 13 ورقم تليفونه
+RESTRICTED FIELDS: Customer.Phone
+RESULT COLUMNS: ['Name']
+RESULT ROWS: [('John Gordon',)]
+
+GOOD:
+اسم العميل هو John Gordon. بخصوص رقم التليفون، عذرًا، ليس لديك
+صلاحية للوصول إلى هذه المعلومة.
+
+BAD (rejects everything, ignores the allowed part):
+عذرًا، ليس لديك صلاحية للوصول إلى البيانات المطلوبة.
+
+BAD (invents a phone number):
+اسم العميل John Gordon، ورقم تليفونه 555-1234.
+
+
 IMPORTANT:
 
 1. Answer the user's question directly.
@@ -174,9 +191,12 @@ IMPORTANT:
 8. Do not add unsupported information.
 
 9. Always use TOTAL MATCHING ROWS ({real_total}) as the
-   correct count when stating how many results exist —
-   never use the number of rows you can see if it's a
-   sample.
+   correct count when stating how many results exist.
 
-10. Return ONLY the final natural-language answer.
+10. If restricted fields are noted above, always answer with
+    whatever allowed data IS available, and only mention the
+    restriction for the specific field(s) that were removed —
+    never reject the entire answer if some data is available.
+
+11. Return ONLY the final natural-language answer.
 """

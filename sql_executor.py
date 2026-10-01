@@ -7,7 +7,8 @@ from sql_validator import (
 )
 
 from authorization.authorization import (
-    authorize_sql
+    get_restricted_identifiers,
+    strip_restricted_select_items
 )
 
 
@@ -15,13 +16,11 @@ from authorization.authorization import (
 # Configuration
 # ============================================================
 
-# أقصى عدد صف نجيبه فعليًا من الداتابيز في أي استعلام مفيهوش
-# LIMIT صريح، أو نقلل أي LIMIT أكبر منه (Safety Net)
 SAFETY_LIMIT = 1000
 
 
 # ============================================================
-# Helpers
+# Helpers — Row Cap / Real Count
 # ============================================================
 
 def _has_limit_clause(query: str) -> bool:
@@ -37,11 +36,6 @@ def _clamp_limit_clause(
     query: str,
     max_limit: int
 ) -> str:
-    """
-    لو فيه LIMIT في الاستعلام وقيمته أكبر من max_limit، بنقللها.
-    لو أقل من أو يساوي max_limit، بنسيبها زي ما هي — نية الـ Model
-    (زي "top 10") محترمة.
-    """
 
     def replace_limit(match):
 
@@ -68,9 +62,6 @@ def _add_safety_limit(
     query: str,
     max_limit: int
 ) -> str:
-    """
-    لو الاستعلام مفيهوش LIMIT خالص، نضيف واحد كـ Safety Net.
-    """
 
     query = query.rstrip().rstrip(";")
 
@@ -78,11 +69,6 @@ def _add_safety_limit(
 
 
 def _build_count_query(query: str) -> str:
-    """
-    بيبني استعلام COUNT(*) حوالين الاستعلام الأصلي (من غير أي
-    LIMIT) عشان نعرف العدد الحقيقي الكامل للنتائج المطابقة، قبل
-    ما نقصّه بأي Limit.
-    """
 
     clean_query = query.rstrip().rstrip(";")
 
@@ -90,6 +76,99 @@ def _build_count_query(query: str) -> str:
         f"SELECT COUNT(*) FROM ({clean_query}) "
         f"AS count_subquery;"
     )
+
+
+# ============================================================
+# Helper — Partial Authorization
+# ============================================================
+
+def _select_list_has_items(query: str) -> bool:
+
+    select_match = re.search(
+        r'\bSELECT\b',
+        query,
+        flags=re.IGNORECASE
+    )
+
+    from_match = re.search(
+        r'\bFROM\b',
+        query,
+        flags=re.IGNORECASE
+    )
+
+    if not select_match or not from_match:
+        return False
+
+    select_list = query[
+        select_match.end():from_match.start()
+    ].strip()
+
+    return bool(select_list)
+
+
+def _apply_authorization(
+    query: str,
+    user: dict
+):
+    """
+    بتفحص الاستعلام وتتعامل مع الأعمدة الممنوعة بذكاء:
+
+    - لو فيه عمود ممنوع بره الـ SELECT list (زي WHERE) -> رفض كامل
+      (مينفعش نشيله من غير ما نغيّر معنى الاستعلام).
+
+    - لو الأعمدة الممنوعة كلها جوه الـ SELECT list بس (عرض) ->
+      نشيلها ونكمل بالباقي، ونرجّع أسماءها عشان نقولها للمستخدم.
+
+    - لو مفيش حاجة ممنوعة خالص -> الاستعلام يعدي زي ما هو.
+
+    بترجّع: (query معدّل أو أصلي, restricted_fields)
+    """
+
+    restricted = get_restricted_identifiers(
+        query,
+        user
+    )
+
+    if not restricted:
+        return query, []
+
+    blocking = [
+        col for col in restricted
+        if not col["select_only"]
+    ]
+
+    if blocking:
+
+        resources_text = ", ".join(
+            f'{col["table"]}.{col["column"]}'
+            for col in restricted
+        )
+
+        raise PermissionError(
+            "Access denied. "
+            f"The requested data requires additional "
+            f"permissions: {resources_text}"
+        )
+
+    new_query, removed_fields = strip_restricted_select_items(
+        query,
+        restricted
+    )
+
+    if not _select_list_has_items(new_query):
+
+        resources_text = ", ".join(
+            f'{col["table"]}.{col["column"]}'
+            for col in restricted
+        )
+
+        raise PermissionError(
+            "Access denied. "
+            f"The requested data requires additional "
+            f"permissions: {resources_text}"
+        )
+
+    return new_query, removed_fields
 
 
 # ============================================================
@@ -103,24 +182,25 @@ def execute_sql(
     """
     بتنفذ SQL بعد التحقق والتفويض، وبترجّع:
 
-        columns, rows, real_total
+        columns, rows, real_total, restricted_fields
 
-    real_total = العدد الحقيقي الكامل للنتائج المطابقة، حتى لو
-    rows نفسها اتقصت لسقف الأمان (SAFETY_LIMIT).
+    restricted_fields = قايمة بأسماء الأعمدة اللي اتشالت من
+    الـ SELECT list لأنها ممنوعة (فاضية لو مفيش حاجة اتشالت).
     """
 
     validate_sql(
         query
     )
 
-    authorize_sql(
-        sql_query=query,
-        user=user
+    # الأعمدة الممنوعة (لو فيه) بتتشال هنا قبل التنفيذ، والـ
+    # query اللي هيتنفذ فعليًا ممكن يبقى مختلف عن الأصلي
+    query, restricted_fields = _apply_authorization(
+        query,
+        user
     )
 
     # --------------------------------------------------------
-    # الحالة 1: فيه LIMIT صريح بالفعل — نية واضحة (زي "top 10")
-    # نحترمها، بس نتأكد إنها مش كبيرة جدًا
+    # الحالة 1: فيه LIMIT صريح بالفعل
     # --------------------------------------------------------
 
     if _has_limit_clause(query):
@@ -134,25 +214,18 @@ def execute_sql(
             safe_query
         )
 
-        # الـ LIMIT كانت مقصودة، فـ "العدد الحقيقي" هو نفسه
-        # عدد الصفوف اللي رجعت فعليًا
         real_total = len(rows)
 
-        return columns, rows, real_total
+        return columns, rows, real_total, restricted_fields
 
     # --------------------------------------------------------
-    # الحالة 2: مفيش LIMIT خالص — محتاجين العدد الحقيقي الكامل
-    # قبل ما نقص بأي حاجة
+    # الحالة 2: مفيش LIMIT خالص
     # --------------------------------------------------------
 
     count_query = _build_count_query(
         query
     )
 
-    # ملحوظة أمنية: مش محتاجين نعيد validate_sql/authorize_sql
-    # هنا، لأن count_query مبني بالكامل حوالين نفس الاستعلام
-    # الأصلي اللي اتفحص فعلاً فوق — مفيش أي identifier جديد
-    # اتضاف، بس Wrapping بس (COUNT + subquery alias بسيط)
     _, count_rows = execute_query(
         count_query
     )
@@ -168,4 +241,4 @@ def execute_sql(
         safe_query
     )
 
-    return columns, rows, real_total
+    return columns, rows, real_total, restricted_fields

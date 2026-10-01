@@ -3,13 +3,6 @@ from models.model_manager import get_model
 from language_utils import detect_language
 
 
-# ============================================================
-# Configuration
-# ============================================================
-
-# أقصى عدد صف نبعته فعليًا للـ LLM لو النتيجة الحقيقية كبيرة —
-# رقم أصغر بكتير من الـ Display Cap (200) لأن هدفه توفير التكلفة
-# والـ Latency، مش عرض بصري
 LLM_SAMPLE_SIZE = 15
 
 
@@ -19,19 +12,13 @@ def generate_answer(
     columns,
     rows,
     real_total: int,
+    restricted_fields: list,
     model_name: str = "nano"
 ):
 
     language = detect_language(
         user_question
     )
-
-    # --------------------------------------------------------
-    # لو العدد الحقيقي أكبر من حجم العيّنة، نبعت عيّنة بس للـ
-    # LLM (مش كل الصفوف) — العدد الحقيقي (real_total) بيتبعت
-    # منفصل عشان الـ LLM يقدر يقول "فيه X نتيجة" بدقة، حتى لو
-    # مشافش غير عيّنة صغيرة منهم
-    # --------------------------------------------------------
 
     if real_total > LLM_SAMPLE_SIZE:
 
@@ -47,6 +34,7 @@ def generate_answer(
         columns=columns,
         rows=rows_for_llm,
         real_total=real_total,
+        restricted_fields=restricted_fields,
         language=language
     )
 

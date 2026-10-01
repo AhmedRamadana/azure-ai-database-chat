@@ -16,8 +16,6 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 # Configuration
 # =========================================================
 
-# أقصى عدد صف نعرضه فعليًا في الجدول بالواجهة (مستقل عن
-# SAFETY_LIMIT بتاع sql_executor.py، وأصغر منه)
 DISPLAY_CAP = 200
 
 
@@ -69,18 +67,29 @@ if "messages" not in st.session_state:
 # =========================================================
 # Helper: عرض نتيجة سؤال واحد (Database Result)
 # =========================================================
-#
-# دالة مشتركة تستخدم في مكانين: عرض الـ History القديم، وعرض
-# الإجابة اللايف وقت السؤال — عشان مانكررش نفس الـ Logic مرتين.
-# =========================================================
 
 def render_database_result(
     columns,
     rows,
     real_total,
     sql,
+    restricted_fields,
     download_key
 ):
+
+    # -----------------------------------------------------
+    # لو فيه أعمدة اتشالت بسبب نقص الصلاحية، نوضحها بصريًا
+    # -----------------------------------------------------
+
+    if restricted_fields:
+
+        fields_text = ", ".join(restricted_fields)
+
+        st.warning(
+            f"🔒 Some requested fields were not shown due to "
+            f"insufficient permissions: **{fields_text}**"
+        )
+
 
     if not rows:
 
@@ -90,10 +99,6 @@ def render_database_result(
 
     else:
 
-        # ---------------------------------------------
-        # نعرض أول DISPLAY_CAP صف بس في الجدول
-        # ---------------------------------------------
-
         display_rows = rows[:DISPLAY_CAP]
 
         display_dataframe = pd.DataFrame(
@@ -101,15 +106,6 @@ def render_database_result(
             columns=columns
         )
 
-
-        # ---------------------------------------------
-        # رسالة العدد — بتفرّق بين 3 حالات:
-        # 1) العدد الحقيقي أكبر من الصفوف اللي جبناها أصلاً
-        #    (يعني SAFETY_LIMIT بتاع sql_executor اتفعّل)
-        # 2) الصفوف اللي جبناها أكبر من DISPLAY_CAP
-        #    (يعني عرضنا بس جزء منها في الجدول)
-        # 3) كل حاجة معروضة بالكامل
-        # ---------------------------------------------
 
         if real_total > len(rows):
 
@@ -133,21 +129,12 @@ def render_database_result(
             )
 
 
-        # ---------------------------------------------
-        # الجدول (مقصوص لـ DISPLAY_CAP)
-        # ---------------------------------------------
-
         st.dataframe(
             display_dataframe,
             use_container_width=True,
             hide_index=True
         )
 
-
-        # ---------------------------------------------
-        # Download CSV — بيحمّل كل الـ rows اللي جبناها
-        # فعليًا (لحد SAFETY_LIMIT)، مش بس الـ 200 المعروضة
-        # ---------------------------------------------
 
         full_dataframe = pd.DataFrame(
             rows,
@@ -168,10 +155,6 @@ def render_database_result(
             key=download_key
         )
 
-
-    # -----------------------------------------------------
-    # Generated SQL
-    # -----------------------------------------------------
 
     with st.expander(
         "View Generated SQL"
@@ -196,10 +179,6 @@ with st.sidebar:
     st.subheader("Model Settings")
 
 
-    # -----------------------------------------------------
-    # Model Selector
-    # -----------------------------------------------------
-
     selected_model = st.selectbox(
         "Select Model",
         options=["nano", "mini"],
@@ -214,18 +193,10 @@ with st.sidebar:
     )
 
 
-    # -----------------------------------------------------
-    # Update Selected Model Immediately
-    # -----------------------------------------------------
-
     st.session_state.selected_model = selected_model
 
     st.divider()
 
-
-    # -----------------------------------------------------
-    # Current Model
-    # -----------------------------------------------------
 
     st.caption("Current model")
 
@@ -236,16 +207,8 @@ with st.sidebar:
     st.divider()
 
 
-    # =======================================================
-    # User Settings (Role Selector + Admin Password Gate)
-    # =======================================================
-
     st.subheader("User Settings")
 
-
-    # -----------------------------------------------------
-    # Role Choice (مجرد اختيار، مش الـ Role الفعلي بعد)
-    # -----------------------------------------------------
 
     role_choice = st.selectbox(
         "Select Role",
@@ -253,20 +216,12 @@ with st.sidebar:
     )
 
 
-    # -----------------------------------------------------
-    # لو اختار USER: نرجّع كل حاجة لوضعها الطبيعي
-    # -----------------------------------------------------
-
     if role_choice == "USER":
 
         st.session_state.admin_authenticated = False
 
         st.session_state.selected_role = "USER"
 
-
-    # -----------------------------------------------------
-    # لو اختار ADMIN: نطلب Password قبل ما نفعّله
-    # -----------------------------------------------------
 
     else:
 
@@ -303,7 +258,6 @@ with st.sidebar:
 
         else:
 
-            # لسه معتمدش — يفضل USER فعليًا
             st.session_state.selected_role = "USER"
 
             st.caption(
@@ -349,25 +303,12 @@ for message in st.session_state.messages:
 
     with st.chat_message(message["role"]):
 
-        # -------------------------------------------------
-        # Message Content
-        # -------------------------------------------------
-
         st.markdown(
             message["content"]
         )
 
 
-        # -------------------------------------------------
-        # Assistant Message
-        # -------------------------------------------------
-
         if message["role"] == "assistant":
-
-
-            # =============================================
-            # Model Used
-            # =============================================
 
             if "model_name" in message:
 
@@ -376,10 +317,6 @@ for message in st.session_state.messages:
                     f"**{model_display_name[message['model_name']]}**"
                 )
 
-
-            # =============================================
-            # Database Result (single question)
-            # =============================================
 
             if message.get("type") == "database":
 
@@ -391,13 +328,12 @@ for message in st.session_state.messages:
                         len(message.get("rows", []))
                     ),
                     sql=message.get("sql", ""),
+                    restricted_fields=message.get(
+                        "restricted_fields", []
+                    ),
                     download_key=message.get("message_id")
                 )
 
-
-            # =============================================
-            # Multiple Questions Result
-            # =============================================
 
             if message.get("type") == "multiple":
 
@@ -444,18 +380,10 @@ prompt = st.chat_input(
 
 if prompt:
 
-    # -----------------------------------------------------
-    # Get Current Selected Model
-    # -----------------------------------------------------
-
     model_name = (
         st.session_state.selected_model
     )
 
-
-    # -----------------------------------------------------
-    # Build Current User (Role)
-    # -----------------------------------------------------
 
     current_user = get_mock_user(
         user_id="streamlit_user",
@@ -463,18 +391,10 @@ if prompt:
     )
 
 
-    # -----------------------------------------------------
-    # Save Previous Conversation History
-    # -----------------------------------------------------
-
     conversation_history = (
         st.session_state.messages.copy()
     )
 
-
-    # -----------------------------------------------------
-    # Display User Message
-    # -----------------------------------------------------
 
     with st.chat_message("user"):
 
@@ -483,10 +403,6 @@ if prompt:
         )
 
 
-    # -----------------------------------------------------
-    # Save User Message
-    # -----------------------------------------------------
-
     st.session_state.messages.append(
         {
             "role": "user",
@@ -494,10 +410,6 @@ if prompt:
         }
     )
 
-
-    # -----------------------------------------------------
-    # Generate Assistant Response
-    # -----------------------------------------------------
 
     with st.chat_message("assistant"):
 
@@ -515,28 +427,16 @@ if prompt:
                 )
 
 
-                # =========================================
-                # Display Answer
-                # =========================================
-
                 st.markdown(
                     result["answer"]
                 )
 
-
-                # =========================================
-                # Display Model Used
-                # =========================================
 
                 st.caption(
                     f"Model used: "
                     f"**{model_display_name[model_name]}**"
                 )
 
-
-                # =========================================
-                # Database Result (single question)
-                # =========================================
 
                 if result["type"] == "database":
 
@@ -548,16 +448,15 @@ if prompt:
                             len(result.get("rows", []))
                         ),
                         sql=result.get("sql", ""),
+                        restricted_fields=result.get(
+                            "restricted_fields", []
+                        ),
                         download_key=(
                             f"download_"
                             f"{len(st.session_state.messages)}"
                         )
                     )
 
-
-                # =========================================
-                # Multiple Questions Result
-                # =========================================
 
                 if result["type"] == "multiple":
 
@@ -589,10 +488,6 @@ if prompt:
                                 )
 
 
-                # =========================================
-                # Save Assistant Message
-                # =========================================
-
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
@@ -604,18 +499,15 @@ if prompt:
                         "type": result["type"],
 
                         "columns": result.get(
-                            "columns",
-                            []
+                            "columns", []
                         ),
 
                         "rows": result.get(
-                            "rows",
-                            []
+                            "rows", []
                         ),
 
                         "sql": result.get(
-                            "sql",
-                            ""
+                            "sql", ""
                         ),
 
                         "real_total": result.get(
@@ -623,9 +515,12 @@ if prompt:
                             len(result.get("rows", []))
                         ),
 
+                        "restricted_fields": result.get(
+                            "restricted_fields", []
+                        ),
+
                         "results": result.get(
-                            "results",
-                            []
+                            "results", []
                         ),
 
                         "resolved_question": result.get(
