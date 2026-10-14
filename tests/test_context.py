@@ -1,4 +1,5 @@
 from context_resolver import resolve_context
+from tests.helpers import get_demo_db, get_user
 
 
 test_cases = [
@@ -106,7 +107,8 @@ for index, test in enumerate(
     result = resolve_context(
         current_question=test["question"],
         conversation_history=test["history"],
-        model_name="mini"
+        model_name="mini",
+        db=get_demo_db()
     )
 
     print(

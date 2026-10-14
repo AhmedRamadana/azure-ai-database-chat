@@ -14,7 +14,8 @@ from language_utils import (
 def generate_multiple_answer(
     user_question: str,
     question_results,
-    model_name: str = "nano"
+    model_name: str = "nano",
+    db_name: str = "Chinook"
 ):
 
     language = detect_language(
@@ -24,7 +25,8 @@ def generate_multiple_answer(
     prompt = build_multiple_answer_prompt(
         user_question=user_question,
         question_results=question_results,
-        language=language
+        language=language,
+        db_name=db_name
     )
 
     model = get_model(

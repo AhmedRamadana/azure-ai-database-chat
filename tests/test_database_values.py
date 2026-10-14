@@ -1,5 +1,5 @@
-from database import execute_query
 
+from tests.helpers import get_demo_db, get_user
 
 queries = {
 
@@ -25,7 +25,7 @@ for name, query in queries.items():
 
     try:
 
-        columns, rows = execute_query(query)
+        columns, rows = get_demo_db().execute(query)
 
         print("COLUMNS:")
         print(list(columns))

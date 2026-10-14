@@ -1,3 +1,24 @@
+## Latest run (17 cases, after the Phase 2–3 prompt changes)
+
+| Model | Passed | Failed | Accuracy | Avg latency |
+|---|---|---|---|---|
+| nano | 14 | 3 | 82.4% | 12.37 s |
+| mini | 17 | 0 | **100.0%** | **8.96 s** |
+
+nano's three failures:
+
+* Tests 6 and 11 (a normal single question): the model labelled it `MULTIPLE` with one question. The analyzer now
+  treats any label/list mismatch as a single question (fixed in code, covered by `test_multiple_analyzer`).
+* Test 16 ("Show me the data."): nano judged it clear and the data check answered "unavailable" instead of asking
+  for clarification. The "no specific subject" rule in `input_analysis_prompt` was strengthened afterwards — **re-run
+  the evaluation to confirm it with nano**.
+
+nano's first request took 49 s (cold start), which inflates its average. **mini is the recommended default.**
+
+---
+
+## Previous run (13 cases, before Phase 2–3)
+
 # Model Comparison — GPT-4.1 nano vs GPT-4.1 mini
 
 ## Methodology

@@ -1,6 +1,7 @@
 from data_discovery import (
     analyze_data_availability
 )
+from tests.helpers import get_demo_db, get_user
 
 
 test_cases = [
@@ -79,7 +80,8 @@ for index, question in enumerate(
 
         result = analyze_data_availability(
             user_question=question,
-            model_name="mini"
+            model_name="mini",
+            db=get_demo_db()
         )
 
         print("\nRESULT:")

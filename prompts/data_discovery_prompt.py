@@ -1,10 +1,11 @@
 def build_data_discovery_prompt(
     user_question: str,
-    schema_context: str
+    schema_context: str,
+    db_name: str = "Chinook"
 ):
 
     return f"""
-You are a data availability analyzer for a Chinook database
+You are a data availability analyzer for a {db_name} database
 question-answering system.
 
 Your task is to determine whether the information requested

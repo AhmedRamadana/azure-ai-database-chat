@@ -21,6 +21,8 @@ answer = generate_answer(
     sql_query=sql_query,
     columns=columns,
     rows=rows,
+    real_total=len(rows),
+    restricted_fields=[],
     model_name="mini"
 )
 

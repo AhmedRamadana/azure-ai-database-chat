@@ -3,6 +3,11 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from models.llm_settings import (
+    LLM_MAX_RETRIES,
+    LLM_TIMEOUT_SECONDS
+)
+
 load_dotenv()
 
 AZURE_OPENAI_API_KEY = os.getenv(
@@ -37,7 +42,9 @@ client = OpenAI(
     base_url=(
         f"{AZURE_OPENAI_ENDPOINT.rstrip('/')}"
         "/openai/v1/"
-    )
+    ),
+    timeout=LLM_TIMEOUT_SECONDS,
+    max_retries=LLM_MAX_RETRIES
 )
 
 

@@ -1,13 +1,15 @@
 import re
 from difflib import SequenceMatcher
-from functools import lru_cache
 
-from database import execute_query
+from authorization.access_policy import (
+    PUBLIC,
+    get_data_sensitivity
+)
 
 
 # Minimum similarity required before correcting a value.
 #
-# 0.80 allows common typos such as:
+# 0.78 allows common typos such as:
 #
 # Caneda  -> Canada
 # Brazill -> Brazil
@@ -22,6 +24,12 @@ SIMILARITY_THRESHOLD = 0.78
 # This prevents the resolver from making a correction
 # when two database values are almost equally similar.
 MIN_SCORE_MARGIN = 0.05
+
+
+# أقصى عدد قيم مختلفة بنحمّلها للعمود الواحد. العمود اللي فيه أكتر
+# من كده (زي IDs أو أوصاف طويلة) بنتخطاه: مفيش فايدة من تصحيح
+# الإملاء عليه، وتحميله كله مكلف.
+MAX_DISTINCT_VALUES = 5000
 
 
 def normalize_value(value: str) -> str:
@@ -49,37 +57,98 @@ def normalize_value(value: str) -> str:
     return value
 
 
-@lru_cache(maxsize=32)
+def _is_text_column(column_type: str) -> bool:
+
+    column_type = str(column_type).upper()
+
+    return any(
+        marker in column_type
+        for marker in ("CHAR", "TEXT")
+    )
+
+
 def get_distinct_values(
+    db,
     table_name: str,
     column_name: str
 ):
     """
     Get distinct string values from a database column.
 
-    Results are cached so the same database column
-    is not queried repeatedly.
+    الكاش جوه db.value_cache (مربوط بالـ Session)، فمفيش تسريب
+    بين مستخدمين أو بين داتابيزات مختلفة.
     """
 
+    key = (table_name, column_name)
+
+    cache = db.value_cache
+
+    if key in cache:
+
+        return cache[key]
+
+    # أعمدة RESTRICTED / DENIED عمرها ما بتتحمّل قيمها: التصحيح
+    # الإملائي عليها مالوش لازمة، وتحميلها كان بيجيب بيانات حساسة
+    # (إيميلات مثلًا) في ذاكرة الـ Session قبل ما الـ Authorization
+    # تشتغل أصلًا.
+    if get_data_sensitivity(
+        table_name,
+        column_name,
+        db.policy
+    ) != PUBLIC:
+
+        cache[key] = ()
+
+        return ()
+
+    table_info = db.schema.get(table_name)
+
+    column_type = None
+
+    if table_info:
+
+        for column in table_info["columns"]:
+
+            if column["name"] == column_name:
+
+                column_type = column["type"]
+
+    # جدول/عمود مش في الـ Schema، أو عمود مش نصي: مفيش حاجة نصححها
+    if column_type is None or not _is_text_column(column_type):
+
+        cache[key] = ()
+
+        return ()
+
+    safe_table = table_name.replace('"', '""')
+    safe_column = column_name.replace('"', '""')
+
     query = f'''
-        SELECT DISTINCT "{column_name}"
-        FROM "{table_name}"
-        WHERE "{column_name}" IS NOT NULL
-        ORDER BY "{column_name}";
+        SELECT DISTINCT "{safe_column}"
+        FROM "{safe_table}"
+        WHERE "{safe_column}" IS NOT NULL
+        ORDER BY "{safe_column}"
+        LIMIT {MAX_DISTINCT_VALUES + 1};
     '''
 
-    columns, rows = execute_query(query)
+    _, rows = db.execute(query)
 
-    values = []
+    if len(rows) > MAX_DISTINCT_VALUES:
 
-    for row in rows:
+        # عالي التنوع: نتخطاه
+        values = ()
 
-        value = row[0]
+    else:
 
-        if isinstance(value, str):
-            values.append(value)
+        values = tuple(
+            row[0]
+            for row in rows
+            if isinstance(row[0], str)
+        )
 
-    return tuple(values)
+    cache[key] = values
+
+    return values
 
 
 def find_best_match(
@@ -189,6 +258,7 @@ def find_best_match(
 
 
 def resolve_value(
+    db,
     table_name: str,
     column_name: str,
     user_value: str
@@ -216,6 +286,7 @@ def resolve_value(
     """
 
     database_values = get_distinct_values(
+        db,
         table_name,
         column_name
     )
@@ -227,6 +298,7 @@ def resolve_value(
 
 
 def resolve_sql_values(
+    db,
     sql_query: str
 ):
     """
@@ -242,21 +314,6 @@ def resolve_sql_values(
 
         corrected_sql,
         corrections
-
-    Example:
-
-        (
-            corrected_sql,
-            [
-                {
-                    "table": "Customer",
-                    "column": "Country",
-                    "original": "Germeny",
-                    "resolved": "Germany",
-                    "score": 0.8571
-                }
-            ]
-        )
     """
 
     corrections = []
@@ -294,6 +351,7 @@ def resolve_sql_values(
         )
 
         result = resolve_value(
+            db=db,
             table_name=table_name,
             column_name=column_name,
             user_value=user_value

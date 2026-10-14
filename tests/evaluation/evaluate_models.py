@@ -1,7 +1,7 @@
 import time
+from tests.helpers import get_demo_db, get_user
 
 from pipeline import run_pipeline
-from database import execute_query
 
 from tests.evaluation.test_cases import TEST_CASES
 
@@ -272,7 +272,8 @@ def evaluate_test_case(
 
         result = run_pipeline(
             user_question=question,
-            model_name=model_name
+            model_name=model_name,
+            db=get_demo_db()
         )
 
         end_time = time.perf_counter()
@@ -321,7 +322,7 @@ def evaluate_test_case(
         )
 
         expected_columns, expected_rows = (
-            execute_query(
+            get_demo_db().execute(
                 ground_truth_sql
             )
         )

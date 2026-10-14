@@ -1,4 +1,5 @@
 import time
+from tests.helpers import get_demo_db, get_user
 
 from pipeline import run_pipeline
 
@@ -35,7 +36,8 @@ for question in questions:
 
             result = run_pipeline(
                 user_question=question,
-                model_name=model_name
+                model_name=model_name,
+                db=get_demo_db()
             )
 
             end_time = time.perf_counter()

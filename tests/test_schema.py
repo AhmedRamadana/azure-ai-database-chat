@@ -1,7 +1,7 @@
-from schema import get_database_schema
 
+from tests.helpers import get_demo_db, get_user
 
-schema = get_database_schema()
+schema = get_demo_db().schema
 
 
 for table_name, table_info in schema.items():

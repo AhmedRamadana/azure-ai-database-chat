@@ -1,6 +1,7 @@
 from auth.mock_auth import (
     get_mock_user
 )
+from tests.helpers import get_demo_db, get_user
 
 from authorization.authorization import (
     authorize_sql
@@ -21,7 +22,8 @@ def test_public_data_for_user():
 
     authorize_sql(
         sql_query=sql,
-        user=user
+        user=user,
+        schema=get_demo_db().schema
     )
 
     print(
@@ -45,7 +47,8 @@ def test_restricted_data_for_user():
 
         authorize_sql(
             sql_query=sql,
-            user=user
+            user=user,
+            schema=get_demo_db().schema
         )
 
         print(
@@ -73,7 +76,8 @@ def test_restricted_data_for_admin():
 
     authorize_sql(
         sql_query=sql,
-        user=admin
+        user=admin,
+        schema=get_demo_db().schema
     )
 
     print(
@@ -102,7 +106,8 @@ def test_user_cannot_promote_themselves():
 
         authorize_sql(
             sql_query=sql,
-            user=user
+            user=user,
+            schema=get_demo_db().schema
         )
 
         print(

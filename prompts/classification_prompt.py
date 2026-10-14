@@ -1,9 +1,11 @@
 def build_classification_prompt(
-    user_question: str
+    user_question: str,
+    db_name: str = "Chinook",
+    schema_summary: str = ""
 ) -> str:
 
     prompt = f"""
-You are a multilingual intent classifier for a Chinook
+You are a multilingual intent classifier for a {db_name}
 database assistant.
 
 The user may communicate in:
@@ -14,6 +16,18 @@ The user may communicate in:
 Understand the user's meaning regardless of language.
 
 Classify the user's message into exactly ONE category.
+
+DATABASE CONTEXT:
+
+Database name: {db_name}
+
+{schema_summary}
+
+Decide DATABASE vs UNRELATED by whether the question could
+plausibly be answered from the tables and columns above (in
+any language). The examples below are illustrative only and
+may mention entities that do not exist in this database.
+
 
 CATEGORIES:
 
@@ -39,7 +53,7 @@ Examples:
 DATABASE
 
 The user is asking for information that can be answered
-using the Chinook database.
+using the {db_name} database.
 
 Examples:
 
@@ -49,10 +63,31 @@ Examples:
 "كام customer موجود؟"
 
 
+DISCOVERY
+
+The user is asking WHAT the database contains: which tables or
+columns exist, what kind of data is available, how the data is
+organized, or what questions they can ask. They are NOT asking
+for actual records, values or numbers.
+
+Examples:
+
+"What data do you have?"
+"What tables are there?"
+"What columns does the Customer table have?"
+"What can I ask you?"
+"Tell me about the database."
+"ايه الداتا الموجودة؟"
+"عندك جداول إيه؟"
+"الـ Invoice فيه أعمدة إيه؟"
+"أقدر أسألك عن إيه؟"
+"احكيلي عن الـ database"
+
+
 UNRELATED
 
 The user is clearly asking about something outside the
-Chinook database and the assistant cannot answer it using
+{db_name} database and the assistant cannot answer it using
 the available database.
 
 Examples:
@@ -75,7 +110,6 @@ Examples:
 "Show me something useful."
 "Can you show me something?"
 "ممكن توريني حاجة؟"
-"أنا عايز أعرف حاجة عن الداتا"
 "قولي حاجة عن العملاء"
 "Tell me something about customers."
 
@@ -84,6 +118,32 @@ clarification about what database information they want.
 
 The next stage of the system will determine whether the
 DATABASE request is CLEAR or AMBIGUOUS.
+
+
+DISCOVERY VS DATABASE:
+
+DISCOVERY asks about the STRUCTURE or CONTENT TYPES of the
+database. DATABASE asks for the data itself.
+
+Examples:
+
+"What columns does the Customer table have?"
+→ DISCOVERY
+
+"Show me the customers."
+→ DATABASE
+
+"ايه الجداول الموجودة؟"
+→ DISCOVERY
+
+"كام customer موجود؟"
+→ DATABASE
+
+"Tell me about the database."
+→ DISCOVERY
+
+"اعرضلي الداتا"
+→ DATABASE (the user wants records, but did not say which)
 
 
 GREETING VS DATABASE:
@@ -115,11 +175,13 @@ Examples:
 UNRELATED:
 
 Use UNRELATED only when the user's request is clearly outside
-the purpose of the Chinook database assistant.
+the purpose of the {db_name} database assistant.
 
 
 IMPORTANT:
 
+- If the user asks what exists or what is available (not for the
+  data itself), use DISCOVERY, never UNRELATED.
 - Understand Arabic correctly.
 - Understand English correctly.
 - Understand mixed Arabic-English correctly.

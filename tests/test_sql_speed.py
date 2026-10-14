@@ -1,6 +1,6 @@
 import time
+from tests.helpers import get_demo_db, get_user
 
-from schema import get_database_schema
 from schema import format_schema_for_llm
 
 from prompts.sql_prompt import build_sql_prompt
@@ -18,7 +18,7 @@ print("\n--- SQL Generation Profiling ---")
 
 start = time.perf_counter()
 
-schema = get_database_schema()
+schema = get_demo_db().schema
 
 end = time.perf_counter()
 
@@ -88,7 +88,8 @@ sql_query = clean_sql(
 )
 
 validate_sql(
-    sql_query
+    sql_query,
+    get_demo_db().schema, get_demo_db().dialect
 )
 
 end = time.perf_counter()

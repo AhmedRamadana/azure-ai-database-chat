@@ -1,11 +1,18 @@
 import re
 from difflib import SequenceMatcher
-from functools import lru_cache
 
-from sqlalchemy import text
+from authorization.access_policy import (
+    PUBLIC,
+    get_data_sensitivity
+)
 
-from database import engine
-from schema import get_database_schema
+from prompts.entity_prompt import (
+    build_entity_prompt
+)
+
+from models.model_manager import (
+    get_model
+)
 
 
 # =========================================================
@@ -15,6 +22,9 @@ from schema import get_database_schema
 MIN_MATCH_LENGTH = 3
 
 FUZZY_MATCH_THRESHOLD = 0.80
+
+# أقصى عدد قيم مختلفة للعمود الواحد في الـ catalog
+MAX_VALUES_PER_COLUMN = 5000
 
 
 # =========================================================
@@ -48,105 +58,109 @@ def normalize_text(value: str) -> str:
 # Build Entity Catalog
 # =========================================================
 
-@lru_cache(maxsize=1)
-def build_entity_catalog():
+def build_entity_catalog(db):
+    """
+    الـ catalog بيتبني مرة واحدة لكل Session وبيتخزن في
+    db.entity_catalog (مفيش cache Global).
+    """
 
-    schema = get_database_schema()
+    if db.entity_catalog is not None:
+
+        return db.entity_catalog
 
     catalog = []
 
-    with engine.connect() as connection:
+    for table_name, table_info in db.schema.items():
 
-        for table_name, table_info in schema.items():
+        for column in table_info["columns"]:
 
-            for column in table_info["columns"]:
+            column_name = column["name"]
 
-                column_name = column["name"]
+            # أعمدة RESTRICTED / DENIED مش بتدخل الـ catalog أبدًا
+            if get_data_sensitivity(
+                table_name,
+                column_name,
+                db.policy
+            ) != PUBLIC:
 
-                column_type = str(
-                    column["type"]
-                ).upper()
+                continue
 
+            column_type = str(
+                column["type"]
+            ).upper()
 
-                # We are interested mainly in
-                # textual columns.
+            # We are interested mainly in
+            # textual columns.
 
-                if not any(
-                    data_type in column_type
-                    for data_type in [
-                        "CHAR",
-                        "TEXT",
-                        "VARCHAR"
-                    ]
-                ):
+            if not any(
+                data_type in column_type
+                for data_type in [
+                    "CHAR",
+                    "TEXT",
+                    "VARCHAR"
+                ]
+            ):
+
+                continue
+
+            # Table and column names come
+            # directly from the inspected schema.
+
+            safe_table = table_name.replace(
+                '"',
+                '""'
+            )
+
+            safe_column = column_name.replace(
+                '"',
+                '""'
+            )
+
+            query = f'''
+                SELECT DISTINCT "{safe_column}"
+                FROM "{safe_table}"
+                WHERE "{safe_column}" IS NOT NULL
+                LIMIT {MAX_VALUES_PER_COLUMN + 1}
+            '''
+
+            try:
+
+                _, rows = db.execute(query)
+
+            except Exception:
+
+                # If a particular column cannot
+                # be read, skip it and continue.
+
+                continue
+
+            if len(rows) > MAX_VALUES_PER_COLUMN:
+
+                continue
+
+            for row in rows:
+
+                value = row[0]
+
+                if not isinstance(value, str):
+
+                    continue
+
+                value = value.strip()
+
+                if not value:
 
                     continue
 
-
-                # Table and column names come
-                # directly from the inspected schema.
-
-                safe_table = (
-                    table_name.replace(
-                        '"',
-                        '""'
-                    )
+                catalog.append(
+                    {
+                        "table": table_name,
+                        "column": column_name,
+                        "value": value
+                    }
                 )
 
-                safe_column = (
-                    column_name.replace(
-                        '"',
-                        '""'
-                    )
-                )
-
-
-                query = text(
-                    f'''
-                    SELECT DISTINCT "{safe_column}"
-                    FROM "{safe_table}"
-                    WHERE "{safe_column}" IS NOT NULL
-                    '''
-                )
-
-
-                try:
-
-                    result = connection.execute(
-                        query
-                    )
-
-                    for row in result:
-
-                        value = row[0]
-
-                        if not isinstance(
-                            value,
-                            str
-                        ):
-
-                            continue
-
-                        value = value.strip()
-
-                        if not value:
-
-                            continue
-
-                        catalog.append(
-                            {
-                                "table": table_name,
-                                "column": column_name,
-                                "value": value
-                            }
-                        )
-
-                except Exception:
-
-                    # If a particular column cannot
-                    # be read, skip it and continue.
-
-                    continue
+    db.entity_catalog = catalog
 
     return catalog
 
@@ -168,10 +182,8 @@ def find_entity_match(
 
         return None
 
-
     best_match = None
     best_score = 0.0
-
 
     for entity in catalog:
 
@@ -180,7 +192,6 @@ def find_entity_match(
         normalized_entity = normalize_text(
             entity_value
         )
-
 
         # Exact normalized match.
         #
@@ -197,20 +208,17 @@ def find_entity_match(
                 "score": 1.0
             }
 
-
         score = SequenceMatcher(
             None,
             normalized_value,
             normalized_entity
         ).ratio()
 
-
         if score > best_score:
 
             best_score = score
 
             best_match = entity
-
 
     if (
         best_match is not None
@@ -222,17 +230,12 @@ def find_entity_match(
             "score": best_score
         }
 
-
     return None
 
-from prompts.entity_prompt import (
-    build_entity_prompt
-)
 
-from models.model_manager import (
-    get_model
-)
-
+# =========================================================
+# LLM-based entity extraction + resolution
+# =========================================================
 
 def extract_entity_candidates(
     user_question: str,
@@ -280,6 +283,7 @@ def extract_entity_candidates(
 
 def resolve_entities(
     user_question: str,
+    db,
     model_name: str = "nano"
 ):
 
@@ -292,11 +296,9 @@ def resolve_entities(
 
         return user_question
 
-
-    catalog = build_entity_catalog()
+    catalog = build_entity_catalog(db)
 
     resolved_question = user_question
-
 
     for candidate in candidates:
 
@@ -309,16 +311,13 @@ def resolve_entities(
 
             continue
 
-
         original_value = candidate
 
         database_value = match["value"]
 
-
         if original_value == database_value:
 
             continue
-
 
         resolved_question = (
             resolved_question.replace(
@@ -326,6 +325,5 @@ def resolve_entities(
                 database_value
             )
         )
-
 
     return resolved_question

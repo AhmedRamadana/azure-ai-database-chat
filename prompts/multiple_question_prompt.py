@@ -1,9 +1,10 @@
 def build_multiple_question_prompt(
-    user_question: str
+    user_question: str,
+    db_name: str = "Chinook"
 ):
 
     return f"""
-You are a question decomposition assistant for a Chinook
+You are a question decomposition assistant for a {db_name}
 database question-answering system.
 
 Your task is to determine whether the user's database request

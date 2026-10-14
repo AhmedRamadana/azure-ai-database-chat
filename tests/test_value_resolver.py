@@ -1,3 +1,4 @@
+from tests.helpers import get_demo_db, get_user
 from value_resolver import (
     get_distinct_values,
     resolve_value,
@@ -14,8 +15,7 @@ print("\nCustomer.Country values:")
 
 try:
 
-    countries = get_distinct_values(
-        "Customer",
+    countries = get_distinct_values(get_demo_db(), "Customer",
         "Country"
     )
 
@@ -41,8 +41,7 @@ print("\nArtist.Name values:")
 
 try:
 
-    artists = get_distinct_values(
-        "Artist",
+    artists = get_distinct_values(get_demo_db(), "Artist",
         "Name"
     )
 
@@ -71,8 +70,7 @@ print("=" * 70)
 
 try:
 
-    countries = get_distinct_values(
-        "Customer",
+    countries = get_distinct_values(get_demo_db(), "Customer",
         "Country"
     )
 
@@ -93,8 +91,7 @@ except Exception as e:
 
 try:
 
-    artists = get_distinct_values(
-        "Artist",
+    artists = get_distinct_values(get_demo_db(), "Artist",
         "Name"
     )
 
@@ -159,6 +156,7 @@ for table, column, value in test_values:
     try:
 
         result = resolve_value(
+            db=get_demo_db(),
             table_name=table,
             column_name=column,
             user_value=value
@@ -239,7 +237,7 @@ for i, sql in enumerate(
     try:
 
         corrected_sql, corrections = (
-            resolve_sql_values(sql)
+            resolve_sql_values(get_demo_db(), sql)
         )
 
         print("\nCORRECTED SQL:")

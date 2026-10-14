@@ -1,9 +1,10 @@
 def build_entity_prompt(
-    user_question: str
+    user_question: str,
+    db_name: str = "Chinook"
 ):
 
     return f"""
-You are an entity detection assistant for a Chinook
+You are an entity detection assistant for a {db_name}
 database assistant.
 
 Your task is to identify possible database entity values
@@ -13,15 +14,13 @@ USER QUESTION:
 {user_question}
 
 
-Look for possible values such as:
+Look for possible values that would be stored in text columns
+of a database, such as:
 
-- Artist names
-- Album names
-- Customer countries
-- Genre names
-- Media types
-- Employee names
-- Playlist names
+- Names of people, companies or products
+- Titles
+- Countries, cities and other places
+- Categories, types and statuses
 
 
 IMPORTANT:

@@ -1,8 +1,13 @@
 import re
 
-from schema import get_database_schema
+from sql_scan import mask_sql
+
+from dialects import get_dialect
 
 
+# كلمات الكتابة/التعديل. بنفحصها على النص الخام (حتى جوه الـ strings)
+# عن قصد: ده بيمنع الدوال اللي بتنفذ SQL مكتوب كنص، وبنقبل إن كلمة
+# زي 'Drop' جوه اسم أغنية تترفض (False Positive مقبول).
 FORBIDDEN_KEYWORDS = [
 
     "INSERT",
@@ -18,7 +23,137 @@ FORBIDDEN_KEYWORDS = [
 ]
 
 
-def validate_sql(query: str) -> bool:
+# كلمات بنفحصها بره الـ strings بس (عشان اسم أغنية زي 'Into the Wild'
+# ميترفضش). SELECT ... INTO بينشئ جدول جديد، يعني كتابة فعلية.
+FORBIDDEN_STRUCTURAL_KEYWORDS = [
+
+    "INTO",
+    "COPY",
+    "EXECUTE",
+    "CALL"
+
+]
+
+
+# دوال وأسماء خطرة: بقت جوه كل Dialect (dialects.py) لأنها بتختلف من نوع
+# لنوع. ده الـ pattern بتاع PostgreSQL (للتوافق مع الكود القديم).
+FORBIDDEN_NAMES_PATTERN = get_dialect("postgresql").forbidden_names
+
+
+def validate_sql_safety(query: str, dialect=None) -> bool:
+    """
+    فحوصات أمان مستقلة عن الـ Schema. dialect=None -> PostgreSQL.
+    """
+
+    dialect = dialect or get_dialect()
+
+    # --------------------------------------------------
+    # 1. حروف بتتلاعب بتحليلنا للنص
+    # --------------------------------------------------
+
+    if "\\" in query:
+
+        raise ValueError(
+            "Backslashes are not allowed in SQL."
+        )
+
+    if re.search(r"\$[A-Za-z_]*\$", query):
+
+        raise ValueError(
+            "Dollar-quoted strings are not allowed."
+        )
+
+    structure, no_strings, balanced = mask_sql(
+        query
+    )
+
+    if not balanced:
+
+        raise ValueError(
+            "SQL contains an unclosed quote."
+        )
+
+    if '""' in no_strings:
+
+        raise ValueError(
+            "Escaped quotes inside identifiers are not allowed."
+        )
+
+    # --------------------------------------------------
+    # 2. تعليقات
+    # --------------------------------------------------
+
+    if "--" in structure or "/*" in structure:
+
+        raise ValueError(
+            "SQL comments are not allowed."
+        )
+
+    # --------------------------------------------------
+    # 3. statement واحد بس (الفاصلة المنقوطة الأخيرة مسموحة)
+    # --------------------------------------------------
+
+    body = structure.rstrip()
+
+    if body.endswith(";"):
+
+        body = body[:-1]
+
+    if ";" in body:
+
+        raise ValueError(
+            "Multiple SQL statements are not allowed."
+        )
+
+    # --------------------------------------------------
+    # 4. كلمات الكتابة (على النص الخام)
+    # --------------------------------------------------
+
+    upper_query = query.upper()
+
+    for keyword in FORBIDDEN_KEYWORDS:
+
+        if re.search(
+            rf"\b{keyword}\b",
+            upper_query
+        ):
+
+            raise ValueError(
+                f"Unsafe SQL detected: {keyword}"
+            )
+
+    # --------------------------------------------------
+    # 5. كلمات بنية خطرة (بره الـ strings)
+    # --------------------------------------------------
+
+    for keyword in FORBIDDEN_STRUCTURAL_KEYWORDS:
+
+        if re.search(
+            rf"\b{keyword}\b",
+            structure,
+            flags=re.IGNORECASE
+        ):
+
+            raise ValueError(
+                f"Unsafe SQL detected: {keyword}"
+            )
+
+    # --------------------------------------------------
+    # 6. دوال وأسماء خطرة
+    # --------------------------------------------------
+
+    dialect.validate_structure(structure)
+
+    return True
+
+
+def validate_sql(query: str, schema: dict, dialect=None) -> bool:
+    """
+    schema: الـ Schema بتاعة الـ Session (db.schema). بقت parameter
+    بدل ما نقراها من الداتابيز، عشان كل Session ليها داتابيز مختلفة.
+
+    dialect: نوع الداتابيز (db.dialect). None -> PostgreSQL.
+    """
 
     query = query.strip()
 
@@ -41,21 +176,13 @@ def validate_sql(query: str) -> bool:
         )
 
     # --------------------------------------------------
-    # 2. Block dangerous SQL keywords
+    # 2. Safety checks (keywords, functions, statements...)
     # --------------------------------------------------
 
-    for keyword in FORBIDDEN_KEYWORDS:
-
-        pattern = rf"\b{keyword}\b"
-
-        if re.search(
-            pattern,
-            normalized_query
-        ):
-
-            raise ValueError(
-                f"Unsafe SQL detected: {keyword}"
-            )
+    validate_sql_safety(
+        query,
+        dialect
+    )
 
     # --------------------------------------------------
     # 3. Validate SQL completeness
@@ -70,7 +197,8 @@ def validate_sql(query: str) -> bool:
     # --------------------------------------------------
 
     validate_schema_identifiers(
-        query
+        query,
+        schema
     )
 
     return True
@@ -81,7 +209,7 @@ def validate_sql_structure(query: str) -> bool:
     normalized_query = query.upper().strip()
 
     # --------------------------------------------------
-    # SELECT queries that access Chinook tables
+    # SELECT queries that read from tables
     # must contain FROM.
     #
     # Example of invalid query:
@@ -122,9 +250,10 @@ def validate_sql_structure(query: str) -> bool:
     return True
 
 
-def validate_schema_identifiers(query: str) -> bool:
-
-    schema = get_database_schema()
+def validate_schema_identifiers(
+    query: str,
+    schema: dict
+) -> bool:
 
     valid_tables = set(
         schema.keys()
@@ -174,6 +303,45 @@ def validate_schema_identifiers(query: str) -> bool:
 
             raise ValueError(
                 f"Unknown table: {table_name}"
+            )
+
+    # --------------------------------------------------
+    # Alias shadowing:
+    #
+    #   FROM "Employee" AS "Customer"
+    #
+    # الـ alias ده بيخلّي "Customer"."City" يتقري كأنه Customer.City
+    # (PUBLIC) مع إنه فعليًا Employee.City (RESTRICTED). الـ
+    # Authorization بتحل الأسماء بالنص، فبنرفض أي alias بيستخدم اسم
+    # جدول تاني.
+    # --------------------------------------------------
+
+    alias_bindings = re.findall(
+
+        r'\b(?:FROM|JOIN)\s+"([^"]+)"\s+(?:AS\s+)?"([^"]+)"'
+        r'|,\s*"([^"]+)"\s+(?:AS\s+)?"([^"]+)"',
+
+        query,
+
+        flags=re.IGNORECASE
+
+    )
+
+    for from_table, from_alias, comma_table, comma_alias in alias_bindings:
+
+        table_name = from_table or comma_table
+
+        alias = from_alias or comma_alias
+
+        if (
+            table_name in valid_tables
+            and alias in valid_tables
+            and alias != table_name
+        ):
+
+            raise ValueError(
+                f"A table alias cannot reuse another table's name: "
+                f"{alias}"
             )
 
     # --------------------------------------------------

@@ -298,4 +298,50 @@ TEST_CASES = [
         "expected_type": "unrelated",
         "comparison": "type_only"
     }
+,
+
+    # ============================================================
+    # 14. Discovery (what does the database contain?)
+    # ============================================================
+
+    {
+        "id": 14,
+        "question": "What tables are in the database?",
+        "expected_type": "discovery",
+        "comparison": "type_only"
+    },
+
+    # ============================================================
+    # 15. Discovery (Arabic)
+    # ============================================================
+
+    {
+        "id": 15,
+        "question": "الـ Customer فيه أعمدة إيه؟",
+        "expected_type": "discovery",
+        "comparison": "type_only"
+    },
+
+    # ============================================================
+    # 16. Genuinely ambiguous request -> one clarification question
+    # ============================================================
+
+    {
+        "id": 16,
+        "question": "Show me the data.",
+        "expected_type": "clarification",
+        "comparison": "type_only"
+    },
+
+    # ============================================================
+    # 17. Short request with a sensible default -> answered directly
+    #     (AMBIGUOUS was narrowed in Phase 3)
+    # ============================================================
+
+    {
+        "id": 17,
+        "question": "Show me customers.",
+        "expected_type": "database",
+        "comparison": "type_only"
+    }
 ]

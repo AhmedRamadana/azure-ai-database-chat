@@ -1,7 +1,6 @@
 import json
 
 from schema import (
-    get_database_schema,
     format_schema_for_llm
 )
 
@@ -47,18 +46,18 @@ def clean_json_response(
 
 def analyze_data_availability(
     user_question: str,
+    db,
     model_name: str = "nano"
 ):
 
-    schema = get_database_schema()
-
     schema_context = format_schema_for_llm(
-        schema
+        db.schema
     )
 
     prompt = build_data_discovery_prompt(
         user_question=user_question,
-        schema_context=schema_context
+        schema_context=schema_context,
+        db_name=db.display_name
     )
 
     model = get_model(

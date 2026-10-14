@@ -1,4 +1,5 @@
 from pipeline import run_pipeline
+from tests.helpers import get_demo_db, get_user
 
 
 questions = [
@@ -16,7 +17,8 @@ for question in questions:
 
     result = run_pipeline(
         user_question=question,
-        model_name="nano"
+        model_name="nano",
+        db=get_demo_db()
     )
 
     print("\nTYPE:")

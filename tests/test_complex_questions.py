@@ -1,4 +1,5 @@
 from pipeline import run_pipeline
+from tests.helpers import get_demo_db, get_user
 
 
 test_questions = [
@@ -69,7 +70,8 @@ for i, question in enumerate(
 
         result = run_pipeline(
             user_question=question.strip(),
-            model_name="mini"
+            model_name="mini",
+            db=get_demo_db()
         )
 
         print("\nTYPE:")

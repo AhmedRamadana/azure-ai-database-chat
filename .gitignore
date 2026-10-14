@@ -1,4 +1,3 @@
-```text
 # Virtual environment
 venv/
 .venv/
@@ -6,6 +5,7 @@ venv/
 # Environment variables
 .env
 .env.*
+!.env.example
 
 # Python cache
 __pycache__/
@@ -18,14 +18,12 @@ __pycache__/
 .vscode/
 .idea/
 
+# Local databases and uploaded files
+*.sqlite
+*.sqlite3
+*.db
+chatdb_*.sqlite
+
 # OS
 .DS_Store
 Thumbs.db
-
-# Test/cache files
-.pytest_cache/
-.mypy_cache/
-
-# Logs
-*.log
-```

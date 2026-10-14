@@ -1,4 +1,5 @@
 from text_to_sql import generate_sql
+from tests.helpers import get_demo_db, get_user
 
 
 test_questions = [
@@ -62,7 +63,8 @@ for i, question in enumerate(
 
         sql = generate_sql(
             user_question=question,
-            model_name="nano"
+            model_name="nano",
+            db=get_demo_db()
         )
 
         print(sql)

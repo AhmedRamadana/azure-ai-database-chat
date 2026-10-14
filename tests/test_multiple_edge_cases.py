@@ -1,4 +1,5 @@
 from pipeline import run_pipeline
+from tests.helpers import get_demo_db, get_user
 
 
 test_cases = [
@@ -166,7 +167,8 @@ for index, test_case in enumerate(
         result = run_pipeline(
             user_question=question,
             model_name="mini",
-            conversation_history=history
+            conversation_history=history,
+            db=get_demo_db()
         )
 
         print("\nTYPE:")

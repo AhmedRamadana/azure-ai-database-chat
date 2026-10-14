@@ -1,6 +1,7 @@
 from multiple_question_analyzer import (
     analyze_multiple_questions
 )
+from tests.helpers import get_demo_db, get_user
 
 from text_to_sql import (
     generate_sql
@@ -80,7 +81,8 @@ def execute_multiple_questions(
 
         sql_query = generate_sql(
             user_question=question,
-            model_name=model_name
+            model_name=model_name,
+            db=get_demo_db()
         )
 
         print("\nGENERATED SQL:")
@@ -92,8 +94,7 @@ def execute_multiple_questions(
         # ==========================================
 
         resolved_sql, corrections = (
-            resolve_sql_values(
-                sql_query
+            resolve_sql_values(get_demo_db(), sql_query
             )
         )
 
@@ -108,7 +109,8 @@ def execute_multiple_questions(
         # ==========================================
 
         columns, rows = execute_sql(
-            resolved_sql
+            resolved_sql,
+            get_user("USER"), get_demo_db()
         )
 
         print("\nCOLUMNS:")

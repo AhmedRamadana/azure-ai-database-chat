@@ -1,6 +1,7 @@
 from entity_resolver import (
     resolve_entities
 )
+from tests.helpers import get_demo_db, get_user
 
 
 test_cases = [
@@ -39,7 +40,8 @@ for index, test in enumerate(
 
     result = resolve_entities(
         user_question=test["question"],
-        model_name="mini"
+        model_name="mini",
+        db=get_demo_db()
     )
 
     print(

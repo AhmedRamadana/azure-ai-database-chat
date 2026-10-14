@@ -2,11 +2,14 @@ def build_sql_correction_prompt(
     user_question: str,
     previous_sql: str,
     error_message: str,
-    schema_context: str
+    schema_context: str,
+    db_name: str = "Chinook",
+    dialect_name: str = "PostgreSQL",
+    dialect_rules: str = ""
 ):
 
     return f"""
-You are an expert PostgreSQL SQL correction assistant.
+You are an expert {dialect_name} SQL correction assistant.
 
 Your task is to fix an invalid SQL query.
 
@@ -28,7 +31,7 @@ RULES:
 
 2. The query must be a complete SELECT query.
 
-3. Every query that reads data from the Chinook database
+3. Every query that reads data from the {db_name} database
    MUST contain a valid FROM clause.
 
 4. Never return a SELECT query that only contains selected
@@ -50,7 +53,8 @@ RULES:
    GRANT
    REVOKE
 
-8. Use PostgreSQL syntax.
+8. Use {dialect_name} syntax.
+{dialect_rules}
 
 9. Use the exact table names from the schema.
 

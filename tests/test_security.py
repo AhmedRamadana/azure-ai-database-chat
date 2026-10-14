@@ -1,4 +1,5 @@
 from sql_validator import validate_sql
+from tests.helpers import get_demo_db, get_user
 
 
 # =========================================================
@@ -39,7 +40,7 @@ for query in safe_queries:
 
     try:
 
-        validate_sql(query)
+        validate_sql(query, get_demo_db().schema, get_demo_db().dialect)
 
         print("PASS:", query)
 
@@ -62,7 +63,7 @@ for query in unsafe_queries:
 
     try:
 
-        validate_sql(query)
+        validate_sql(query, get_demo_db().schema, get_demo_db().dialect)
 
         print("FAIL - UNSAFE QUERY WAS ACCEPTED:")
         print(query)

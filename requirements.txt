@@ -1,6 +1,12 @@
-openai
-python-dotenv
-pandas
-sqlalchemy
-psycopg2-binary
-streamlit
+# Lower bounds only. After you confirm everything works on your machine, run
+#   pip freeze > requirements.lock
+# and deploy from the lock file for reproducible builds.
+openai>=1.40
+python-dotenv>=1.0
+pandas>=2.0
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pymysql>=1.1
+cryptography>=42
+streamlit>=1.35
+pytest>=8.0

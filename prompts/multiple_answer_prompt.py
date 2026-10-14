@@ -1,7 +1,8 @@
 def build_multiple_answer_prompt(
     user_question: str,
     question_results,
-    language: str
+    language: str,
+    db_name: str = "Chinook"
 ):
 
     results_text = []
@@ -125,7 +126,7 @@ Answer entirely in English.
 """
 
     return f"""
-You are a helpful assistant for a Chinook database
+You are a helpful assistant for a {db_name} database
 question-answering system.
 
 The user asked multiple independent database questions.

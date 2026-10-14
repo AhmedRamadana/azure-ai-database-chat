@@ -1,10 +1,8 @@
-from schema import (
-    get_database_schema,
-    format_schema_for_llm
-)
+from schema import format_schema_for_llm
+from tests.helpers import get_demo_db, get_user
 
 
-schema = get_database_schema()
+schema = get_demo_db().schema
 
 schema_context = format_schema_for_llm(
     schema

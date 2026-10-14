@@ -13,7 +13,9 @@ def generate_answer(
     rows,
     real_total: int,
     restricted_fields: list,
-    model_name: str = "nano"
+    model_name: str = "nano",
+    db_name: str = "Chinook",
+    assumed: bool = False
 ):
 
     language = detect_language(
@@ -35,7 +37,9 @@ def generate_answer(
         rows=rows_for_llm,
         real_total=real_total,
         restricted_fields=restricted_fields,
-        language=language
+        language=language,
+        db_name=db_name,
+        assumed=assumed
     )
 
     model = get_model(

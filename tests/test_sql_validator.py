@@ -2,6 +2,7 @@ from sql_validator import (
     clean_sql,
     validate_sql
 )
+from tests.helpers import get_demo_db, get_user
 
 
 queries = [
@@ -29,7 +30,7 @@ for query in queries:
 
         cleaned_query = clean_sql(query)
 
-        validate_sql(cleaned_query)
+        validate_sql(cleaned_query, get_demo_db().schema, get_demo_db().dialect)
 
         print("Result: SAFE")
         print("Cleaned SQL:")

@@ -5,7 +5,9 @@ def build_answer_prompt(
     rows,
     real_total: int,
     restricted_fields: list,
-    language: str
+    language: str,
+    db_name: str = "Chinook",
+    assumed: bool = False
 ):
 
     is_sample = real_total > len(rows)
@@ -47,8 +49,23 @@ insufficient permissions.
 
         restriction_note = ""
 
+    if assumed:
+
+        assumption_note = """
+ASSUMED INTERPRETATION:
+The user's request was not fully specific, and it was answered
+using the most reasonable interpretation. Start the answer with
+ONE short sentence saying how you interpreted the request, then
+give the answer. Invite the user to say so if they meant
+something else. Do not apologize or ask a question.
+"""
+
+    else:
+
+        assumption_note = ""
+
     return f"""
-You are a database assistant for the Chinook database.
+You are a database assistant for the {db_name} database.
 
 Your task is to answer the user's question using ONLY
 the provided SQL result.
@@ -68,6 +85,8 @@ TOTAL MATCHING ROWS:
 {sample_note}
 
 {restriction_note}
+
+{assumption_note}
 
 RESULT COLUMNS:
 {columns}

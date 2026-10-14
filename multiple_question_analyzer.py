@@ -14,11 +14,13 @@ MAX_QUESTIONS = 5
 
 def analyze_multiple_questions(
     user_question: str,
-    model_name: str = "nano"
+    model_name: str = "nano",
+    db_name: str = "Chinook"
 ):
 
     prompt = build_multiple_question_prompt(
-        user_question
+        user_question,
+        db_name=db_name
     )
 
     model = get_model(
@@ -112,23 +114,20 @@ def analyze_multiple_questions(
                 "Decomposed questions cannot be empty."
             )
 
-    if question_type == "SINGLE":
+    # الـ label مجرد توقع من الموديل. لو الـ label والقايمة مش متطابقين
+    # (مثلًا MULTIPLE بسؤال واحد، وده بيحصل كتير مع nano على سؤال واحد
+    # عادي)، الأمان إننا نعامله كسؤال واحد بنصه الأصلي بدل ما نفشل.
+    # ده مش بيفتح أي ثغرة: السؤال بيكمل في نفس الـ pipeline والفحوصات.
+    if (
+        question_type == "SINGLE" and len(questions) != 1
+    ) or (
+        question_type == "MULTIPLE" and len(questions) < 2
+    ):
 
-        if len(questions) != 1:
-
-            raise ValueError(
-                "SINGLE must contain exactly "
-                "one question."
-            )
-
-    if question_type == "MULTIPLE":
-
-        if len(questions) < 2:
-
-            raise ValueError(
-                "MULTIPLE must contain at least "
-                "two questions."
-            )
+        return {
+            "type": "SINGLE",
+            "questions": [user_question.strip()]
+        }
 
     return {
         "type": question_type,
